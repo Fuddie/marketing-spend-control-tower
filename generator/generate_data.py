@@ -35,6 +35,17 @@ MONTHLY_BUDGET_OPTIONS = [
     Decimal("15000.00"),
 ]
 
+PACE_MULTIPLIERS = {
+    "CMP-008": Decimal("1.40"),
+    "CMP-011": Decimal("0.60"),
+    "CMP-012": Decimal("1.20"),
+}
+
+TRACKING_GAP_CAMPAIGN_ID = "CMP-009"
+TRACKING_GAP_DAYS = 3
+
+POST_END_SPEND_CAMPAIGN_ID = "CMP-005"
+
 
 def determine_campaign_status(start_date, end_date, run_date):
     """Determine a campaign's status from its active dates."""
@@ -81,6 +92,113 @@ def get_month_starts(start_date, end_date):
             )
 
     return months
+
+def get_month_end(date_value):
+    """Return the final day of the month containing date_value."""
+
+    if date_value.month == 12:
+        next_month = date(
+            date_value.year + 1,
+            1,
+            1,
+        )
+    else:
+        next_month = date(
+            date_value.year,
+            date_value.month + 1,
+            1,
+        )
+
+    return next_month - timedelta(days=1)
+
+def get_active_days_in_month(
+    campaign_start_date,
+    campaign_end_date,
+    spend_date,
+):
+    """Calculate the campaign's active days in a given month."""
+
+    month_start = date(
+        spend_date.year,
+        spend_date.month,
+        1,
+    )
+
+    month_end = get_month_end(spend_date)
+
+    active_start = max(
+        campaign_start_date,
+        month_start,
+    )
+
+    active_end = min(
+        campaign_end_date,
+        month_end,
+    )
+
+    return (active_end - active_start).days + 1
+
+def get_effective_budget(
+    budget_changes,
+    campaign_id,
+    spend_date,
+):
+    """Find the latest applicable budget for a campaign and date."""
+
+    budget_month = date(
+        spend_date.year,
+        spend_date.month,
+        1,
+    )
+
+    eligible_budgets = []
+
+    for budget in budget_changes:
+        effective_date = datetime.fromisoformat(
+            budget["effective_at"]
+        ).date()
+
+        matches_campaign = (
+            budget["campaign_id"] == campaign_id
+        )
+
+        matches_month = (
+            budget["budget_month"]
+            == budget_month.isoformat()
+        )
+
+        is_effective = effective_date <= spend_date
+
+        if (
+            matches_campaign
+            and matches_month
+            and is_effective
+        ):
+            eligible_budgets.append(budget)
+
+    if not eligible_budgets:
+        raise ValueError(
+            f"No effective budget found for "
+            f"{campaign_id} on {spend_date}."
+        )
+
+    latest_budget = max(
+        eligible_budgets,
+        key=lambda budget: budget["effective_at"],
+    )
+
+    return Decimal(
+        latest_budget["budget_amount"]
+    )
+
+def get_pace_multiplier(campaign_id):
+    """Return the planned spending behaviour for a campaign."""
+
+    return PACE_MULTIPLIERS.get(
+        campaign_id,
+        Decimal("1.00"),
+    )
+
 
 def generate_campaign_dates(campaign_number, run_date):
     """
@@ -319,6 +437,154 @@ def generate_budget_changes(campaigns, run_date):
 
     return budget_changes
 
+def generate_ad_spend_daily(
+    campaigns,
+    budget_changes,
+    run_date,
+):
+    """Generate daily advertising performance records."""
+
+    spend_records = []
+
+    tracking_gap_start_date = (
+        run_date
+        - timedelta(days=TRACKING_GAP_DAYS - 1)
+    )
+
+    for campaign in campaigns:
+        campaign_id = campaign["campaign_id"]
+
+        campaign_start_date = date.fromisoformat(
+            campaign["start_date"]
+        )
+
+        campaign_end_date = date.fromisoformat(
+            campaign["end_date"]
+        )
+
+        final_spend_date = min(
+            campaign_end_date,
+            run_date,
+        )
+
+        if (
+            campaign_id == POST_END_SPEND_CAMPAIGN_ID
+            and campaign_end_date < run_date
+        ):
+            final_spend_date = min(
+                campaign_end_date + timedelta(days=2),
+                get_month_end(campaign_end_date),
+                run_date,
+            )
+
+        if campaign_start_date > final_spend_date:
+            continue
+
+        spend_date = campaign_start_date
+
+        while spend_date <= final_spend_date:
+            monthly_budget = get_effective_budget(
+                budget_changes=budget_changes,
+                campaign_id=campaign_id,
+                spend_date=spend_date,
+            )
+
+            active_days = get_active_days_in_month(
+                campaign_start_date=campaign_start_date,
+                campaign_end_date=campaign_end_date,
+                spend_date=spend_date,
+            )
+
+            daily_budget = (
+                monthly_budget
+                / Decimal(active_days)
+            )
+
+            pace_multiplier = get_pace_multiplier(
+                campaign_id=campaign_id
+            )
+
+            daily_variation = (
+                Decimal(random.randint(90, 110))
+                / Decimal("100")
+            )
+
+            spend_amount = (
+                daily_budget
+                * pace_multiplier
+                * daily_variation
+            ).quantize(Decimal("0.01"))
+
+            impressions_per_pound = Decimal(
+                random.randint(80, 140)
+            )
+
+            impressions = int(
+                spend_amount
+                * impressions_per_pound
+            )
+
+            click_through_rate = (
+                Decimal(random.randint(10, 40))
+                / Decimal("1000")
+            )
+
+            clicks = int(
+                Decimal(impressions)
+                * click_through_rate
+            )
+
+            conversion_rate = (
+                Decimal(random.randint(20, 80))
+                / Decimal("1000")
+            )
+
+            platform_conversions = int(
+                Decimal(clicks)
+                * conversion_rate
+            )
+
+            is_tracking_gap = (
+                campaign_id
+                == TRACKING_GAP_CAMPAIGN_ID
+                and spend_date >= tracking_gap_start_date
+            )
+
+            if is_tracking_gap:
+                platform_conversions = 0
+
+            source_update_date = min(
+                spend_date + timedelta(days=1),
+                run_date,
+            )
+
+            source_updated_at = datetime.combine(
+                source_update_date,
+                datetime.min.time(),
+            ) + timedelta(hours=6)
+
+            spend_record = {
+                "spend_record_id": (
+                    f"SPEND-{campaign_id}-"
+                    f"{spend_date.strftime('%Y%m%d')}"
+                ),
+                "campaign_id": campaign_id,
+                "spend_date": spend_date.isoformat(),
+                "spend_amount": str(spend_amount),
+                "impressions": impressions,
+                "clicks": clicks,
+                "platform_conversions": platform_conversions,
+                "currency_code": "GBP",
+                "source_updated_at": (
+                    source_updated_at.isoformat()
+                ),
+            }
+
+            spend_records.append(spend_record)
+            spend_date += timedelta(days=1)
+
+    return spend_records
+
 def validate_campaigns(campaigns):
     """Validate the generated campaign records before writing them."""
 
@@ -401,6 +667,85 @@ def validate_budget_changes(budget_changes, campaigns):
             raise ValueError(
                 f"{budget['budget_change_id']} does not "
                 "use the first day of the budget month."
+            )
+
+def validate_ad_spend_daily(
+    spend_records,
+    campaigns,
+):
+    """Validate daily advertising-spend records."""
+
+    valid_campaign_ids = {
+        campaign["campaign_id"]
+        for campaign in campaigns
+    }
+
+    spend_record_ids = [
+        record["spend_record_id"]
+        for record in spend_records
+    ]
+
+    if len(spend_record_ids) != len(set(spend_record_ids)):
+        raise ValueError(
+            "Duplicate spend record IDs were generated."
+        )
+
+    for record in spend_records:
+        campaign_id = record["campaign_id"]
+
+        if campaign_id not in valid_campaign_ids:
+            raise ValueError(
+                f"{record['spend_record_id']} contains "
+                "an unknown campaign ID."
+            )
+
+        spend_amount = Decimal(
+            record["spend_amount"]
+        )
+
+        if spend_amount <= 0:
+            raise ValueError(
+                f"{record['spend_record_id']} has "
+                "an invalid spend amount."
+            )
+
+        if record["impressions"] < 0:
+            raise ValueError(
+                f"{record['spend_record_id']} has "
+                "negative impressions."
+            )
+
+        if record["clicks"] < 0:
+            raise ValueError(
+                f"{record['spend_record_id']} has "
+                "negative clicks."
+            )
+
+        if record["clicks"] > record["impressions"]:
+            raise ValueError(
+                f"{record['spend_record_id']} has "
+                "more clicks than impressions."
+            )
+
+        if record["platform_conversions"] < 0:
+            raise ValueError(
+                f"{record['spend_record_id']} has "
+                "negative conversions."
+            )
+
+        if (
+            record["platform_conversions"]
+            > record["clicks"]
+        ):
+            raise ValueError(
+                f"{record['spend_record_id']} has "
+                "more conversions than clicks."
+            )
+
+        if record["currency_code"] != "GBP":
+            raise ValueError(
+                f"{record['spend_record_id']} has "
+                "an invalid currency."
             )
 
 def write_campaigns_csv(campaigns, run_date):
@@ -502,6 +847,59 @@ def write_budget_changes_csv(
 
     return output_path
 
+def write_ad_spend_daily_csv(
+    spend_records,
+    run_date,
+):
+    """Write daily advertising records to the landing directory."""
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    output_directory = (
+        project_root
+        / "data"
+        / "landing"
+        / "ad_spend_daily"
+        / f"extract_date={run_date.isoformat()}"
+    )
+
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path = (
+        output_directory
+        / "ad_spend_daily.csv"
+    )
+
+    fieldnames = [
+        "spend_record_id",
+        "campaign_id",
+        "spend_date",
+        "spend_amount",
+        "impressions",
+        "clicks",
+        "platform_conversions",
+        "currency_code",
+        "source_updated_at",
+    ]
+
+    with output_path.open(
+        mode="w",
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=fieldnames,
+        )
+
+        writer.writeheader()
+        writer.writerows(spend_records)
+
+    return output_path
+
 def main():
     random.seed(RANDOM_SEED)
 
@@ -532,6 +930,22 @@ def main():
         run_date=RUN_DATE,
     )
 
+    spend_records = generate_ad_spend_daily (
+        campaigns=campaigns,
+        budget_changes=budget_changes,
+        run_date=RUN_DATE,
+    )
+
+    validate_ad_spend_daily(
+        spend_records=spend_records,
+        campaigns=campaigns,
+    )
+
+    spend_output_path = write_ad_spend_daily_csv (
+        spend_records=spend_records,
+        run_date=RUN_DATE,
+    )
+
     status_counts = {}
 
     for campaign in campaigns:
@@ -546,6 +960,39 @@ def main():
         if budget["change_reason"] != "initial allocation"
     )
 
+    tracking_gap_start_date = (
+        RUN_DATE
+        - timedelta(days=TRACKING_GAP_DAYS - 1)
+    )
+
+    tracking_gap_count = sum(
+        1
+        for record in spend_records
+        if (
+            record["campaign_id"]
+            == TRACKING_GAP_CAMPAIGN_ID
+            and date.fromisoformat(record["spend_date"])
+            >= tracking_gap_start_date
+            and record["platform_conversions"] == 0
+        )
+    )
+
+    campaign_end_dates = {
+        campaign["campaign_id"]: date.fromisoformat(
+            campaign["end_date"]
+        )
+        for campaign in campaigns
+    }
+
+    post_end_spend_count = sum(
+        1
+        for record in spend_records
+        if (
+            date.fromisoformat(record["spend_date"])
+            > campaign_end_dates[record["campaign_id"]]
+        )
+    )
+
     print(f"Generated {len(campaigns)} campaign records.")
     print(f"Campaign status counts: {status_counts}")
     print(f"Campaign output: {campaigns_output_path}")
@@ -554,12 +1001,16 @@ def main():
         f"Generated {len(budget_changes)} "
         "campaign budget records."
     )
-    print(
-        f"Budget revision count: "
-        f"{budget_revision_count}"
-    )
+    print(f"Budget revision count: {budget_revision_count}")
     print(f"Budget output: {budgets_output_path}")
 
+    print(
+        f"Generated {len(spend_records)} "
+        "daily advertising records."
+    )
+    print(f"Tracking-gap records: {tracking_gap_count}")
+    print(f"Post-end spend records: {post_end_spend_count}")
+    print(f"Spend output: {spend_output_path}")
 
 if __name__ == "__main__":
     main()
