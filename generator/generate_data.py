@@ -46,6 +46,30 @@ TRACKING_GAP_DAYS = 3
 
 POST_END_SPEND_CAMPAIGN_ID = "CMP-005"
 
+NUMBER_OF_CUSTOMERS = 180
+
+ORDER_STATUSES = [
+    "completed",
+    "cancelled",
+    "pending",
+]
+
+ORDER_STATUS_WEIGHTS = [
+    88,
+    7,
+    5,
+]
+
+ORDER_VALUE_OPTIONS = [
+    Decimal("35.00"),
+    Decimal("49.00"),
+    Decimal("75.00"),
+    Decimal("99.00"),
+    Decimal("125.00"),
+    Decimal("175.00"),
+    Decimal("250.00"),
+]
+
 
 def determine_campaign_status(start_date, end_date, run_date):
     """Determine a campaign's status from its active dates."""
@@ -585,6 +609,123 @@ def generate_ad_spend_daily(
 
     return spend_records
 
+def generate_orders(
+    spend_records,
+    run_date,
+):
+    """Generate synthetic customer orders from advertising activity."""
+
+    orders = []
+    order_campaign_links = []
+    order_number = 1
+
+    run_date_end = datetime.combine(
+        run_date,
+        datetime.max.time(),
+    )
+
+    for spend_record in spend_records:
+        spend_date = date.fromisoformat(
+            spend_record["spend_date"]
+        )
+
+        spend_amount = Decimal(
+            spend_record["spend_amount"]
+        )
+
+        estimated_orders = int(
+            spend_amount / Decimal("175.00")
+        )
+
+        daily_variation = random.choice(
+            [-1, 0, 0, 0, 1]
+        )
+
+        order_count = max(
+            0,
+            min(
+                estimated_orders + daily_variation,
+                5,
+            ),
+        )
+
+        for _ in range(order_count):
+            order_id = f"ORD-{order_number:06d}"
+
+            customer_number = random.randint(
+                1,
+                NUMBER_OF_CUSTOMERS,
+            )
+
+            customer_id = (
+                f"CUST-{customer_number:04d}"
+            )
+
+            order_hour = random.randint(8, 22)
+            order_minute = random.randint(0, 59)
+
+            order_timestamp = datetime.combine(
+                spend_date,
+                datetime.min.time(),
+            ) + timedelta(
+                hours=order_hour,
+                minutes=order_minute,
+            )
+
+            order_status = random.choices(
+                ORDER_STATUSES,
+                weights=ORDER_STATUS_WEIGHTS,
+                k=1,
+            )[0]
+
+            gross_revenue = random.choice(
+                ORDER_VALUE_OPTIONS
+            )
+
+            update_delay_hours = random.randint(
+                1,
+                72,
+            )
+
+            source_updated_at = min(
+                order_timestamp
+                + timedelta(hours=update_delay_hours),
+                run_date_end,
+            )
+
+            order = {
+                "order_id": order_id,
+                "customer_id": customer_id,
+                "order_timestamp": (
+                    order_timestamp.isoformat()
+                ),
+                "order_status": order_status,
+                "gross_revenue": str(gross_revenue),
+                "currency_code": "GBP",
+                "source_updated_at": (
+                    source_updated_at.isoformat()
+                ),
+            }
+
+            campaign_link = {
+                "order_id": order_id,
+                "campaign_id": (
+                    spend_record["campaign_id"]
+                ),
+                "spend_date": (
+                    spend_record["spend_date"]
+                ),
+            }
+
+            orders.append(order)
+            order_campaign_links.append(
+                campaign_link
+            )
+
+            order_number += 1
+
+    return orders, order_campaign_links
+
 def validate_campaigns(campaigns):
     """Validate the generated campaign records before writing them."""
 
@@ -748,6 +889,83 @@ def validate_ad_spend_daily(
                 "an invalid currency."
             )
 
+def validate_orders(
+    orders,
+    order_campaign_links,
+    campaigns,
+    run_date,
+):
+    """Validate generated orders and their temporary campaign links."""
+
+    valid_campaign_ids = {
+        campaign["campaign_id"]
+        for campaign in campaigns
+    }
+
+    order_ids = [
+        order["order_id"]
+        for order in orders
+    ]
+
+    if len(order_ids) != len(set(order_ids)):
+        raise ValueError(
+            "Duplicate order IDs were generated."
+        )
+
+    allowed_statuses = set(ORDER_STATUSES)
+
+    for order in orders:
+        order_timestamp = datetime.fromisoformat(
+            order["order_timestamp"]
+        )
+
+        source_updated_at = datetime.fromisoformat(
+            order["source_updated_at"]
+        )
+
+        if order["order_status"] not in allowed_statuses:
+            raise ValueError(
+                f"{order['order_id']} has an invalid status."
+            )
+
+        if Decimal(order["gross_revenue"]) <= 0:
+            raise ValueError(
+                f"{order['order_id']} has invalid revenue."
+            )
+
+        if order["currency_code"] != "GBP":
+            raise ValueError(
+                f"{order['order_id']} has an invalid currency."
+            )
+
+        if source_updated_at < order_timestamp:
+            raise ValueError(
+                f"{order['order_id']} was updated before "
+                "it was created."
+            )
+
+        if order_timestamp.date() > run_date:
+            raise ValueError(
+                f"{order['order_id']} has a future timestamp."
+            )
+
+    linked_order_ids = [
+        link["order_id"]
+        for link in order_campaign_links
+    ]
+
+    if set(linked_order_ids) != set(order_ids):
+        raise ValueError(
+            "Order campaign links do not match the orders."
+        )
+
+    for link in order_campaign_links:
+        if link["campaign_id"] not in valid_campaign_ids:
+            raise ValueError(
+                f"{link['order_id']} links to an "
+                "unknown campaign."
+            )
+
 def write_campaigns_csv(campaigns, run_date):
     """Write campaign records to the daily landing directory."""
 
@@ -900,6 +1118,54 @@ def write_ad_spend_daily_csv(
 
     return output_path
 
+def write_orders_csv(
+    orders,
+    run_date,
+):
+    """Write order records to the daily landing directory."""
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    output_directory = (
+        project_root
+        / "data"
+        / "landing"
+        / "orders"
+        / f"extract_date={run_date.isoformat()}"
+    )
+
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path = output_directory / "orders.csv"
+
+    fieldnames = [
+        "order_id",
+        "customer_id",
+        "order_timestamp",
+        "order_status",
+        "gross_revenue",
+        "currency_code",
+        "source_updated_at",
+    ]
+
+    with output_path.open(
+        mode="w",
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=fieldnames,
+        )
+
+        writer.writeheader()
+        writer.writerows(orders)
+
+    return output_path
+
 def main():
     random.seed(RANDOM_SEED)
 
@@ -946,6 +1212,23 @@ def main():
         run_date=RUN_DATE,
     )
 
+    orders, order_campaign_links = generate_orders(
+        spend_records=spend_records,
+        run_date=RUN_DATE,
+    )
+
+    validate_orders(
+        orders=orders,
+        order_campaign_links=order_campaign_links,
+        campaigns=campaigns,
+        run_date=RUN_DATE,
+    )
+
+    orders_output_path = write_orders_csv(
+        orders=orders,
+        run_date=RUN_DATE,
+    )
+
     status_counts = {}
 
     for campaign in campaigns:
@@ -953,6 +1236,24 @@ def main():
         status_counts[status] = (
             status_counts.get(status, 0) + 1
         )
+
+
+        orders, order_campaign_links = generate_orders(
+        spend_records=spend_records,
+        run_date=RUN_DATE,
+    )
+
+    validate_orders(
+        orders=orders,
+        order_campaign_links=order_campaign_links,
+        campaigns=campaigns,
+        run_date=RUN_DATE,
+    )
+
+    orders_output_path = write_orders_csv(
+        orders=orders,
+        run_date=RUN_DATE,
+    )
 
     budget_revision_count = sum(
         1
@@ -991,7 +1292,29 @@ def main():
             date.fromisoformat(record["spend_date"])
             > campaign_end_dates[record["campaign_id"]]
         )
+    )  
+
+    order_status_counts = {}
+
+    for order in orders:
+        order_status = order["order_status"]
+
+        order_status_counts[order_status] = (
+            order_status_counts.get(
+                order_status,
+                0,
+            ) + 1
+        )
+
+    completed_gross_revenue = sum(
+        (
+            Decimal(order["gross_revenue"])
+            for order in orders
+            if order["order_status"] == "completed"
+        ),
+        Decimal("0.00"),
     )
+
 
     print(f"Generated {len(campaigns)} campaign records.")
     print(f"Campaign status counts: {status_counts}")
@@ -1011,6 +1334,14 @@ def main():
     print(f"Tracking-gap records: {tracking_gap_count}")
     print(f"Post-end spend records: {post_end_spend_count}")
     print(f"Spend output: {spend_output_path}")
+    print(f"Generated {len(orders)} order records.")
+    print(f"Order status counts: {order_status_counts}")
+    print(
+        "Completed gross revenue: "
+        f"£{completed_gross_revenue}"
+    )
+    print(f"Order output: {orders_output_path}")
+
 
 if __name__ == "__main__":
     main()
