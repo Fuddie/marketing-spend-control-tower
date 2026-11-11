@@ -70,6 +70,8 @@ ORDER_VALUE_OPTIONS = [
     Decimal("250.00"),
 ]
 
+ATTRIBUTION_RATE_PERCENT = 85
+
 
 def determine_campaign_status(start_date, end_date, run_date):
     """Determine a campaign's status from its active dates."""
@@ -726,6 +728,101 @@ def generate_orders(
 
     return orders, order_campaign_links
 
+def generate_attribution_events(
+    orders,
+    order_campaign_links,
+    run_date,
+):
+    """Generate last-click marketing attribution events."""
+
+    attribution_events = []
+    attribution_number = 1
+
+    orders_by_id = {
+        order["order_id"]: order
+        for order in orders
+    }
+
+    tracking_gap_start_date = (
+        run_date
+        - timedelta(days=TRACKING_GAP_DAYS - 1)
+    )
+
+    run_date_end = datetime.combine(
+        run_date,
+        datetime.max.time(),
+    )
+
+    for link in order_campaign_links:
+        campaign_id = link["campaign_id"]
+
+        spend_date = date.fromisoformat(
+            link["spend_date"]
+        )
+
+        is_tracking_gap = (
+            campaign_id
+            == TRACKING_GAP_CAMPAIGN_ID
+            and spend_date >= tracking_gap_start_date
+        )
+
+        if is_tracking_gap:
+            continue
+
+        should_attribute = (
+            random.randint(1, 100)
+            <= ATTRIBUTION_RATE_PERCENT
+        )
+
+        if not should_attribute:
+            continue
+
+        order = orders_by_id[link["order_id"]]
+
+        order_timestamp = datetime.fromisoformat(
+            order["order_timestamp"]
+        )
+
+        minutes_before_order = random.randint(
+            5,
+            360,
+        )
+
+        touchpoint_timestamp = (
+            order_timestamp
+            - timedelta(minutes=minutes_before_order)
+        )
+
+        source_updated_at = min(
+            order_timestamp
+            + timedelta(hours=random.randint(1, 24)),
+            run_date_end,
+        )
+
+        attribution_event = {
+            "attribution_id": (
+                f"ATTR-{attribution_number:06d}"
+            ),
+            "order_id": link["order_id"],
+            "campaign_id": campaign_id,
+            "touchpoint_timestamp": (
+                touchpoint_timestamp.isoformat()
+            ),
+            "attribution_model": "last_click",
+            "attribution_weight": "1.0000",
+            "source_updated_at": (
+                source_updated_at.isoformat()
+            ),
+        }
+
+        attribution_events.append(
+            attribution_event
+        )
+
+        attribution_number += 1
+
+    return attribution_events
+
 def validate_campaigns(campaigns):
     """Validate the generated campaign records before writing them."""
 
@@ -966,6 +1063,105 @@ def validate_orders(
                 "unknown campaign."
             )
 
+def validate_attribution_events(
+    attribution_events,
+    orders,
+    campaigns,
+):
+    """Validate last-click attribution records."""
+
+    valid_order_ids = {
+        order["order_id"]
+        for order in orders
+    }
+
+    valid_campaign_ids = {
+        campaign["campaign_id"]
+        for campaign in campaigns
+    }
+
+    orders_by_id = {
+        order["order_id"]: order
+        for order in orders
+    }
+
+    attribution_ids = [
+        event["attribution_id"]
+        for event in attribution_events
+    ]
+
+    if len(attribution_ids) != len(set(attribution_ids)):
+        raise ValueError(
+            "Duplicate attribution IDs were generated."
+        )
+
+    attributed_order_ids = [
+        event["order_id"]
+        for event in attribution_events
+    ]
+
+    if len(attributed_order_ids) != len(
+        set(attributed_order_ids)
+    ):
+        raise ValueError(
+            "An order received more than one "
+            "last-click attribution."
+        )
+
+    for event in attribution_events:
+        order_id = event["order_id"]
+        campaign_id = event["campaign_id"]
+
+        if order_id not in valid_order_ids:
+            raise ValueError(
+                f"{event['attribution_id']} contains "
+                "an unknown order ID."
+            )
+
+        if campaign_id not in valid_campaign_ids:
+            raise ValueError(
+                f"{event['attribution_id']} contains "
+                "an unknown campaign ID."
+            )
+
+        if event["attribution_model"] != "last_click":
+            raise ValueError(
+                f"{event['attribution_id']} has "
+                "an invalid attribution model."
+            )
+
+        if Decimal(event["attribution_weight"]) != Decimal(
+            "1.0000"
+        ):
+            raise ValueError(
+                f"{event['attribution_id']} has "
+                "an invalid attribution weight."
+            )
+
+        order_timestamp = datetime.fromisoformat(
+            orders_by_id[order_id]["order_timestamp"]
+        )
+
+        touchpoint_timestamp = datetime.fromisoformat(
+            event["touchpoint_timestamp"]
+        )
+
+        source_updated_at = datetime.fromisoformat(
+            event["source_updated_at"]
+        )
+
+        if touchpoint_timestamp >= order_timestamp:
+            raise ValueError(
+                f"{event['attribution_id']} has a "
+                "touchpoint after the order."
+            )
+
+        if source_updated_at < order_timestamp:
+            raise ValueError(
+                f"{event['attribution_id']} was updated "
+                "before the order occurred."
+            )
+
 def write_campaigns_csv(campaigns, run_date):
     """Write campaign records to the daily landing directory."""
 
@@ -1166,6 +1362,57 @@ def write_orders_csv(
 
     return output_path
 
+def write_attribution_events_csv(
+    attribution_events,
+    run_date,
+):
+    """Write attribution events to the landing directory."""
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    output_directory = (
+        project_root
+        / "data"
+        / "landing"
+        / "attribution_events"
+        / f"extract_date={run_date.isoformat()}"
+    )
+
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path = (
+        output_directory
+        / "attribution_events.csv"
+    )
+
+    fieldnames = [
+        "attribution_id",
+        "order_id",
+        "campaign_id",
+        "touchpoint_timestamp",
+        "attribution_model",
+        "attribution_weight",
+        "source_updated_at",
+    ]
+
+    with output_path.open(
+        mode="w",
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=fieldnames,
+        )
+
+        writer.writeheader()
+        writer.writerows(attribution_events)
+
+    return output_path
+
 def main():
     random.seed(RANDOM_SEED)
 
@@ -1255,6 +1502,25 @@ def main():
         run_date=RUN_DATE,
     )
 
+    attribution_events = generate_attribution_events(
+        orders=orders,
+        order_campaign_links=order_campaign_links,
+        run_date=RUN_DATE,
+    )
+
+    validate_attribution_events(
+        attribution_events=attribution_events,
+        orders=orders,
+        campaigns=campaigns,
+    )
+
+    attribution_output_path = (
+        write_attribution_events_csv(
+            attribution_events=attribution_events,
+            run_date=RUN_DATE,
+        )
+    )
+
     budget_revision_count = sum(
         1
         for budget in budget_changes
@@ -1315,6 +1581,22 @@ def main():
         Decimal("0.00"),
     )
 
+    attributed_order_count = len(
+        attribution_events
+    )
+
+    unattributed_order_count = (
+        len(orders) - attributed_order_count
+    )
+
+    if orders:
+        attribution_rate = (
+            attributed_order_count
+            / len(orders)
+            * 100
+        )
+    else:
+        attribution_rate = 0
 
     print(f"Generated {len(campaigns)} campaign records.")
     print(f"Campaign status counts: {status_counts}")
@@ -1341,6 +1623,22 @@ def main():
         f"£{completed_gross_revenue}"
     )
     print(f"Order output: {orders_output_path}")
+    print(
+        f"Generated {len(attribution_events)} "
+        "attribution records."
+    )
+    print(
+        f"Attributed orders: {attributed_order_count}"
+    )
+    print(
+        f"Unattributed orders: {unattributed_order_count}"
+    )
+    print(
+        f"Attribution rate: {attribution_rate:.1f}%"
+    )
+    print(
+        f"Attribution output: {attribution_output_path}"
+    )
 
 
 if __name__ == "__main__":
