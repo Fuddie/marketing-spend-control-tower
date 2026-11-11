@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: mart_campaign_alerts
+    description: Current-day campaigns requiring action because pacing is warning or critical.
+
+    columns:
+      - name: campaign_id
+        description: Unique campaign identifier.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: alert_date
+        description: Date on which the alert was detected.
+        data_tests:
+          - not_null
+
+      - name: alert_severity
+        description: Severity assigned by the campaign pacing rules.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - warning
+                  - critical
+
+      - name: alert_reason
+        description: Business explanation for why the campaign generated an alert.
+        data_tests:
+          - not_null
+
+      - name: alert_priority
+        description: Numeric priority where one is the highest priority.
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        description: Currency used for financial measures.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - GBP
