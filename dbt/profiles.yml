@@ -1,0 +1,9 @@
+marketing_spend_control_tower:
+  target: dev
+
+  outputs:
+    dev:
+      type: duckdb
+      path: warehouse/marketing_spend.duckdb
+      schema: main
+      threads: 4

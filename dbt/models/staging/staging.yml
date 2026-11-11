@@ -1,0 +1,215 @@
+version: 2
+
+models:
+  - name: stg_campaigns
+    description: Cleaned campaign master records.
+    columns:
+      - name: campaign_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: channel
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - Meta Ads
+                  - Google Ads
+                  - TikTok Ads
+
+      - name: campaign_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - planned
+                  - active
+                  - paused
+                  - completed
+                  - cancelled
+
+      - name: start_date
+        data_tests:
+          - not_null
+
+      - name: end_date
+        data_tests:
+          - not_null
+
+  - name: stg_campaign_budget_changes
+    description: Cleaned monthly campaign budget versions.
+    columns:
+      - name: budget_change_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: campaign_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_campaigns')
+                field: campaign_id
+
+      - name: budget_amount
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - GBP
+
+  - name: stg_ad_spend_daily
+    description: Cleaned daily advertising performance.
+    columns:
+      - name: spend_record_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: campaign_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_campaigns')
+                field: campaign_id
+
+      - name: spend_date
+        data_tests:
+          - not_null
+
+      - name: spend_amount
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - GBP
+
+  - name: stg_orders
+    description: Cleaned synthetic customer orders.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        data_tests:
+          - not_null
+
+      - name: order_timestamp
+        data_tests:
+          - not_null
+
+      - name: order_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - completed
+                  - pending
+                  - cancelled
+
+      - name: gross_revenue
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - GBP
+
+  - name: stg_attribution_events
+    description: Cleaned last-click attribution records.
+    columns:
+      - name: attribution_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+
+      - name: campaign_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_campaigns')
+                field: campaign_id
+
+      - name: attribution_model
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - last_click
+
+      - name: attribution_weight
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - 1.0000
+                quote: false
+
+  - name: stg_refunds
+    description: Cleaned delayed customer refunds.
+    columns:
+      - name: refund_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+
+      - name: refund_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - completed
+                  - pending
+                  - rejected
+
+      - name: refund_amount
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - GBP

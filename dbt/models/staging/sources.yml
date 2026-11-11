@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Typed source data loaded from daily CSV extracts.
+    schema: bronze
+
+    tables:
+      - name: campaigns
+        description: One current record per campaign.
+
+      - name: campaign_budget_changes
+        description: Approved campaign budget versions by month.
+
+      - name: ad_spend_daily
+        description: Daily advertising performance by campaign.
+
+      - name: orders
+        description: Synthetic customer orders.
+
+      - name: attribution_events
+        description: Last-click campaign attribution records.
+
+      - name: refunds
+        description: Partial and full customer refunds.
+
+        

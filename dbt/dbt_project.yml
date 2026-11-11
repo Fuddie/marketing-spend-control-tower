@@ -1,0 +1,26 @@
+name: marketing_spend_control_tower
+version: "1.0.0"
+config-version: 2
+
+profile: marketing_spend_control_tower
+
+model-paths:
+  - models
+
+macro-paths:
+  - macros
+
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  marketing_spend_control_tower:
+    staging:
+      +materialized: view
+      +schema: silver
+
+    marts:
+      +materialized: table
+      +schema: gold
