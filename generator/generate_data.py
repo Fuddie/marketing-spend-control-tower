@@ -72,6 +72,34 @@ ORDER_VALUE_OPTIONS = [
 
 ATTRIBUTION_RATE_PERCENT = 85
 
+REFUND_RATE_PERCENT = 12
+
+REFUND_STATUSES = [
+    "completed",
+    "pending",
+    "rejected",
+]
+
+REFUND_STATUS_WEIGHTS = [
+    70,
+    20,
+    10,
+]
+
+REFUND_REASONS = [
+    "customer return",
+    "damaged item",
+    "incorrect item",
+    "delivery issue",
+    "duplicate charge",
+]
+
+REFUND_PERCENTAGES = [
+    Decimal("0.25"),
+    Decimal("0.50"),
+    Decimal("1.00"),
+]
+
 
 def determine_campaign_status(start_date, end_date, run_date):
     """Determine a campaign's status from its active dates."""
@@ -823,6 +851,224 @@ def generate_attribution_events(
 
     return attribution_events
 
+def generate_refunds(
+    orders,
+    run_date,
+):
+    """Generate partial and full refunds for completed orders."""
+
+    refunds = []
+    refund_number = 1
+
+    run_date_end = datetime.combine(
+        run_date,
+        datetime.max.time(),
+    )
+
+    for order in orders:
+        if order["order_status"] != "completed":
+            continue
+
+        should_refund = (
+            random.randint(1, 100)
+            <= REFUND_RATE_PERCENT
+        )
+
+        if not should_refund:
+            continue
+
+        order_timestamp = datetime.fromisoformat(
+            order["order_timestamp"]
+        )
+
+        refund_delay_days = random.randint(
+            2,
+            21,
+        )
+
+        refund_timestamp = (
+            order_timestamp
+            + timedelta(days=refund_delay_days)
+        )
+
+        if refund_timestamp > run_date_end:
+            continue
+
+        gross_revenue = Decimal(
+            order["gross_revenue"]
+        )
+
+        refund_percentage = random.choice(
+            REFUND_PERCENTAGES
+        )
+
+        refund_amount = (
+            gross_revenue
+            * refund_percentage
+        ).quantize(Decimal("0.01"))
+
+        refund_status = random.choices(
+            REFUND_STATUSES,
+            weights=REFUND_STATUS_WEIGHTS,
+            k=1,
+        )[0]
+
+        refund_reason = random.choice(
+            REFUND_REASONS
+        )
+
+        source_updated_at = min(
+            refund_timestamp
+            + timedelta(
+                hours=random.randint(1, 72)
+            ),
+            run_date_end,
+        )
+
+        refund = {
+            "refund_id": (
+                f"REF-{refund_number:06d}"
+            ),
+            "order_id": order["order_id"],
+            "refund_timestamp": (
+                refund_timestamp.isoformat()
+            ),
+            "refund_amount": str(refund_amount),
+            "refund_status": refund_status,
+            "refund_reason": refund_reason,
+            "currency_code": "GBP",
+            "source_updated_at": (
+                source_updated_at.isoformat()
+            ),
+        }
+
+        refunds.append(refund)
+        refund_number += 1
+
+    return refunds
+
+def validate_refunds(
+    refunds,
+    orders,
+    run_date,
+):
+    """Validate generated refund records."""
+
+    orders_by_id = {
+        order["order_id"]: order
+        for order in orders
+    }
+
+    refund_ids = [
+        refund["refund_id"]
+        for refund in refunds
+    ]
+
+    if len(refund_ids) != len(set(refund_ids)):
+        raise ValueError(
+            "Duplicate refund IDs were generated."
+        )
+
+    refunded_order_ids = [
+        refund["order_id"]
+        for refund in refunds
+    ]
+
+    if len(refunded_order_ids) != len(
+        set(refunded_order_ids)
+    ):
+        raise ValueError(
+            "An order received more than one refund record."
+        )
+
+    allowed_statuses = set(REFUND_STATUSES)
+    allowed_reasons = set(REFUND_REASONS)
+
+    for refund in refunds:
+        order_id = refund["order_id"]
+
+        if order_id not in orders_by_id:
+            raise ValueError(
+                f"{refund['refund_id']} contains "
+                "an unknown order ID."
+            )
+
+        order = orders_by_id[order_id]
+
+        if order["order_status"] != "completed":
+            raise ValueError(
+                f"{refund['refund_id']} belongs to "
+                "a non-completed order."
+            )
+
+        refund_amount = Decimal(
+            refund["refund_amount"]
+        )
+
+        gross_revenue = Decimal(
+            order["gross_revenue"]
+        )
+
+        if refund_amount <= 0:
+            raise ValueError(
+                f"{refund['refund_id']} has "
+                "an invalid refund amount."
+            )
+
+        if refund_amount > gross_revenue:
+            raise ValueError(
+                f"{refund['refund_id']} exceeds "
+                "the order's gross revenue."
+            )
+
+        if refund["refund_status"] not in allowed_statuses:
+            raise ValueError(
+                f"{refund['refund_id']} has "
+                "an invalid refund status."
+            )
+
+        if refund["refund_reason"] not in allowed_reasons:
+            raise ValueError(
+                f"{refund['refund_id']} has "
+                "an invalid refund reason."
+            )
+
+        if refund["currency_code"] != "GBP":
+            raise ValueError(
+                f"{refund['refund_id']} has "
+                "an invalid currency."
+            )
+
+        order_timestamp = datetime.fromisoformat(
+            order["order_timestamp"]
+        )
+
+        refund_timestamp = datetime.fromisoformat(
+            refund["refund_timestamp"]
+        )
+
+        source_updated_at = datetime.fromisoformat(
+            refund["source_updated_at"]
+        )
+
+        if refund_timestamp <= order_timestamp:
+            raise ValueError(
+                f"{refund['refund_id']} occurred "
+                "before the order."
+            )
+
+        if refund_timestamp.date() > run_date:
+            raise ValueError(
+                f"{refund['refund_id']} has "
+                "a future timestamp."
+            )
+
+        if source_updated_at < refund_timestamp:
+            raise ValueError(
+                f"{refund['refund_id']} was updated "
+                "before it was created."
+            )
+
 def validate_campaigns(campaigns):
     """Validate the generated campaign records before writing them."""
 
@@ -1413,6 +1659,55 @@ def write_attribution_events_csv(
 
     return output_path
 
+def write_refunds_csv(
+    refunds,
+    run_date,
+):
+    """Write refund records to the daily landing directory."""
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    output_directory = (
+        project_root
+        / "data"
+        / "landing"
+        / "refunds"
+        / f"extract_date={run_date.isoformat()}"
+    )
+
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path = output_directory / "refunds.csv"
+
+    fieldnames = [
+        "refund_id",
+        "order_id",
+        "refund_timestamp",
+        "refund_amount",
+        "refund_status",
+        "refund_reason",
+        "currency_code",
+        "source_updated_at",
+    ]
+
+    with output_path.open(
+        mode="w",
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=fieldnames,
+        )
+
+        writer.writeheader()
+        writer.writerows(refunds)
+
+    return output_path
+
 def main():
     random.seed(RANDOM_SEED)
 
@@ -1521,6 +1816,35 @@ def main():
         )
     )
 
+    refunds = generate_refunds(
+        orders=orders,
+        run_date=RUN_DATE,
+    )
+
+    validate_refunds(
+        refunds=refunds,
+        orders=orders,
+        run_date=RUN_DATE,
+    )
+
+    refunds_output_path = write_refunds_csv(
+        refunds=refunds,
+        run_date=RUN_DATE,
+    )
+
+    refund_status_counts = {}
+
+    for refund in refunds:
+        refund_status = refund["refund_status"]
+
+        refund_status_counts[refund_status] = (
+            refund_status_counts.get(
+                refund_status,
+                0,
+            )
+            + 1
+        )
+
     budget_revision_count = sum(
         1
         for budget in budget_changes
@@ -1581,6 +1905,21 @@ def main():
         Decimal("0.00"),
     )
 
+    
+    completed_refund_amount = sum(
+        (
+            Decimal(refund["refund_amount"])
+            for refund in refunds
+            if refund["refund_status"] == "completed"
+        ),
+        Decimal("0.00"),
+    )
+
+    net_revenue = (
+        completed_gross_revenue
+        - completed_refund_amount
+    )
+
     attributed_order_count = len(
         attribution_events
     )
@@ -1639,6 +1978,17 @@ def main():
     print(
         f"Attribution output: {attribution_output_path}"
     )
+
+    print(f"Generated {len(refunds)} refund records.")
+    print(f"Refund status counts: {refund_status_counts}")
+
+    print(
+        "Completed refund amount: "
+        f"£{completed_refund_amount}"
+    )
+
+    print(f"Net revenue: £{net_revenue}")
+    print(f"Refund output: {refunds_output_path}")
 
 
 if __name__ == "__main__":
