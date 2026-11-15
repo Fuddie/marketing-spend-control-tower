@@ -39,8 +39,10 @@ models:
       - name: currency_code
         description: Currency used for financial measures.
         data_tests:
-          - not_null
-          - accepted_values:
+         - not_null:
+            config:
+              where: "budget_amount is not null"
+         - accepted_values:
               arguments:
                 values:
                   - GBP

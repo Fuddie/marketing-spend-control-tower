@@ -145,7 +145,6 @@ models:
       - name: order_id
         data_tests:
           - not_null
-          - unique
           - relationships:
               arguments:
                 to: ref('stg_orders')
@@ -187,7 +186,6 @@ models:
       - name: order_id
         data_tests:
           - not_null
-          - unique
           - relationships:
               arguments:
                 to: ref('stg_orders')

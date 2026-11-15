@@ -306,14 +306,19 @@ def upsert_source_file(
                 = source.{primary_key}
 
         WHEN MATCHED
-            AND source.source_updated_at
-                >= target.source_updated_at
+            AND source.extract_date
+                >= target.extract_date
         THEN UPDATE SET
             {update_assignments}
 
         WHEN NOT MATCHED
         THEN INSERT ({insert_columns})
         VALUES ({insert_values})
+
+        WHEN NOT MATCHED BY SOURCE
+            AND target.extract_date
+                <= DATE '{extract_date.isoformat()}'
+        THEN DELETE
         """
     )
 
@@ -400,4 +405,4 @@ if __name__ == "__main__":
     main()
 
     
-    
+
