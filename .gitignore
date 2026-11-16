@@ -8,3 +8,8 @@ warehouse/*.duckdb.wal
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
+# Local Wren files and generated snapshots
+wren/connection.local.json
+wren/target/
+warehouse/wren_export/
+warehouse/wren_warehouse/
