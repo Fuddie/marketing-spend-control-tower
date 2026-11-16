@@ -68,6 +68,24 @@ def format_currency(value: float) -> str:
     return f"£{value:,.0f}"
 
 
+def style_figure(figure):
+    """Keep Plotly charts consistent with Streamlit's dark control-tower theme."""
+    figure.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0, 0, 0, 0)",
+        plot_bgcolor="rgba(0, 0, 0, 0)",
+        font=dict(color="#e6edf3"),
+        legend=dict(
+            bgcolor="rgba(0, 0, 0, 0)",
+            borderwidth=0,
+            font=dict(color="#e6edf3"),
+        ),
+    )
+    figure.update_xaxes(gridcolor="rgba(255, 255, 255, 0.12)")
+    figure.update_yaxes(gridcolor="rgba(255, 255, 255, 0.12)")
+    return figure
+
+
 st.title("Marketing Spend Control Tower")
 st.caption(
     "Campaign performance, budget pacing and prioritised alerts from governed dbt marts."
@@ -155,12 +173,13 @@ with st.sidebar:
     selected_channels = st.multiselect(
         "Channel",
         options=available_channels,
-        default=available_channels,
+        placeholder="All channels",
     )
+    effective_channels = selected_channels or available_channels
 
     available_campaigns = sorted(
         performance_df.loc[
-            performance_df["channel"].isin(selected_channels), "campaign_name"
+            performance_df["channel"].isin(effective_channels), "campaign_name"
         ]
         .dropna()
         .unique()
@@ -169,8 +188,9 @@ with st.sidebar:
     selected_campaigns = st.multiselect(
         "Campaign",
         options=available_campaigns,
-        default=available_campaigns,
+        placeholder="All campaigns",
     )
+    effective_campaigns = selected_campaigns or available_campaigns
 
     if st.button("Refresh data", use_container_width=True):
         st.cache_data.clear()
@@ -183,21 +203,21 @@ else:
 
 filtered_performance = performance_df[
     performance_df["metric_date"].dt.date.between(start_date, end_date)
-    & performance_df["channel"].isin(selected_channels)
-    & performance_df["campaign_name"].isin(selected_campaigns)
+    & performance_df["channel"].isin(effective_channels)
+    & performance_df["campaign_name"].isin(effective_campaigns)
 ].copy()
 
 filtered_pacing = pacing_df[
-    pacing_df["channel"].isin(selected_channels)
-    & pacing_df["campaign_name"].isin(selected_campaigns)
+    pacing_df["channel"].isin(effective_channels)
+    & pacing_df["campaign_name"].isin(effective_campaigns)
 ].copy()
 
 if alerts_df.empty:
     filtered_alerts = alerts_df.copy()
 else:
     filtered_alerts = alerts_df[
-        alerts_df["channel"].isin(selected_channels)
-        & alerts_df["campaign_name"].isin(selected_campaigns)
+        alerts_df["channel"].isin(effective_channels)
+        & alerts_df["campaign_name"].isin(effective_campaigns)
         & alerts_df["alert_date"].dt.date.between(start_date, end_date)
     ].copy()
 
@@ -264,7 +284,7 @@ with left_chart:
         legend_y=1.12,
         margin=dict(l=10, r=10, t=30, b=10),
     )
-    st.plotly_chart(spend_figure, use_container_width=True)
+    st.plotly_chart(style_figure(spend_figure), use_container_width=True)
 
 with right_chart:
     st.subheader("Daily spend and attributed revenue")
@@ -292,7 +312,7 @@ with right_chart:
         legend_y=1.12,
         margin=dict(l=10, r=10, t=30, b=10),
     )
-    st.plotly_chart(revenue_figure, use_container_width=True)
+    st.plotly_chart(style_figure(revenue_figure), use_container_width=True)
 
 campaign_summary = (
     filtered_performance.groupby(["campaign_name", "channel"], as_index=False)
@@ -326,7 +346,7 @@ with campaign_chart:
         },
     )
     campaign_figure.update_layout(margin=dict(l=10, r=10, t=30, b=10))
-    st.plotly_chart(campaign_figure, use_container_width=True)
+    st.plotly_chart(style_figure(campaign_figure), use_container_width=True)
 
 with pacing_chart:
     st.subheader("Current budget pacing")
@@ -349,15 +369,18 @@ with pacing_chart:
                 "campaign_name": "",
                 "pacing_status": "Status",
             },
+            category_orders={
+                "pacing_status": ["critical", "warning", "normal"],
+            },
             color_discrete_map={
-                "overspending": "#eb5757",
-                "on_track": "#27ae60",
-                "underspending": "#f2c94c",
+                "critical": "#eb5757",
+                "warning": "#f2c94c",
+                "normal": "#27ae60",
             },
         )
         pacing_figure.add_vline(x=1.0, line_dash="dash", line_color="#bdbdbd")
         pacing_figure.update_layout(margin=dict(l=10, r=10, t=30, b=10))
-        st.plotly_chart(pacing_figure, use_container_width=True)
+        st.plotly_chart(style_figure(pacing_figure), use_container_width=True)
 
 st.subheader("Campaign detail")
 campaign_table = campaign_summary[
