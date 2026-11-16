@@ -1,0 +1,128 @@
+name: campaign_alerts
+table_reference:
+  catalog: marketing_spend
+  schema: gold
+  table: mart_campaign_alerts
+columns:
+  - name: campaign_id
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Stable campaign identifier.
+  - name: campaign_name
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Business-facing campaign name.
+  - name: channel
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Advertising channel.
+  - name: objective
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Campaign objective.
+  - name: alert_date
+    type: DATE
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Date the governed alert condition was evaluated.
+  - name: alert_severity
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Alert severity, such as warning or critical.
+  - name: alert_reason
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Plain-language explanation of the alert condition.
+  - name: alert_priority
+    type: INTEGER
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Numeric action priority. Lower numbers should be reviewed first.
+  - name: month_to_date_spend
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Actual month-to-date spend in GBP.
+  - name: budget_amount
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Applicable monthly budget in GBP.
+  - name: projected_month_end_spend
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Projected month-end spend in GBP.
+  - name: month_to_date_net_revenue
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Month-to-date attributed net revenue in GBP after completed refunds.
+  - name: month_to_date_roas
+    type: DECIMAL
+    is_calculated: false
+    not_null: false
+    is_primary_key: false
+    properties:
+      description: Month-to-date attributed net revenue divided by month-to-date spend.
+  - name: pacing_ratio
+    type: DECIMAL
+    is_calculated: false
+    not_null: false
+    is_primary_key: false
+    properties:
+      description: Month-to-date spend divided by expected spend to date.
+  - name: has_post_end_spend
+    type: BOOLEAN
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: True when spend was recorded after the campaign end date.
+  - name: is_projected_to_exceed_budget
+    type: BOOLEAN
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: True when projected month-end spend exceeds budget.
+  - name: currency_code
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: ISO currency code. Financial records use GBP.
+cached: false
+properties:
+  description: Action-focused campaign alerts generated from governed pacing, overspend and post-end-spend rules.
