@@ -85,6 +85,127 @@ def style_figure(figure):
     figure.update_yaxes(gridcolor="rgba(255, 255, 255, 0.12)")
     return figure
 
+VERIFIED_QUESTIONS = [
+    "Which campaigns need immediate attention, and why?",
+    "What are total spend, attributed net revenue, and ROAS?",
+    "Which campaigns are projected to exceed budget, and by how much?",
+]
+
+
+def answer_dashboard_question(
+    question: str,
+    performance: pd.DataFrame,
+    pacing: pd.DataFrame,
+    alerts: pd.DataFrame,
+) -> tuple[str, str, pd.DataFrame | None]:
+    """Answer supported business questions from the governed dashboard data."""
+    normalised = " ".join(question.lower().strip().split())
+
+    if any(term in normalised for term in ["immediate attention", "active alert", "need attention"]):
+        if alerts.empty:
+            return "message", "No active alerts match the current filters.", None
+        columns = [
+            "campaign_name",
+            "channel",
+            "alert_severity",
+            "alert_reason",
+            "month_to_date_spend",
+            "budget_amount",
+            "projected_month_end_spend",
+            "pacing_ratio",
+        ]
+        return (
+            "alerts",
+            f"{len(alerts)} campaign(s) need attention under the current filters.",
+            alerts[columns].sort_values(["alert_priority", "campaign_name"]),
+        )
+
+    asks_for_totals = (
+        "total spend" in normalised
+        or ("spend" in normalised and "revenue" in normalised and "roas" in normalised)
+    )
+    if asks_for_totals:
+        spend = float(performance["spend_amount"].sum())
+        revenue = float(performance["attributed_net_revenue"].sum())
+        question_roas = revenue / spend if spend else 0.0
+        answer = (
+            f"Total spend is £{spend:,.2f}, attributed net revenue is "
+            f"£{revenue:,.2f}, and ROAS is {question_roas:.2f}x."
+        )
+        return "message", answer, None
+
+    if (
+        ("projected" in normalised or "projection" in normalised)
+        and ("budget" in normalised or "overspend" in normalised)
+    ):
+        projected = pacing[
+            pacing["projected_month_end_spend"] > pacing["budget_amount"]
+        ].copy()
+        if projected.empty:
+            return "message", "No campaigns are projected to exceed budget.", None
+        projected["projected_overspend"] = (
+            projected["projected_month_end_spend"] - projected["budget_amount"]
+        )
+        columns = [
+            "campaign_name",
+            "channel",
+            "budget_amount",
+            "projected_month_end_spend",
+            "projected_overspend",
+            "pacing_ratio",
+        ]
+        return (
+            "projection",
+            f"{len(projected)} campaign(s) are projected to exceed budget.",
+            projected[columns].sort_values("projected_overspend", ascending=False),
+        )
+
+    campaign_totals = (
+        performance.groupby(["campaign_name", "channel"], as_index=False)
+        .agg(
+            spend=("spend_amount", "sum"),
+            net_revenue=("attributed_net_revenue", "sum"),
+        )
+    )
+    campaign_totals["roas"] = (
+        campaign_totals["net_revenue"]
+        .div(campaign_totals["spend"].where(campaign_totals["spend"] != 0))
+        .fillna(0)
+    )
+
+    if "highest spend" in normalised or "most spend" in normalised:
+        row = campaign_totals.sort_values("spend", ascending=False).iloc[0]
+        return (
+            "message",
+            f"{row['campaign_name']} has the highest spend at £{row['spend']:,.2f}.",
+            None,
+        )
+
+    if "highest revenue" in normalised or "most revenue" in normalised:
+        row = campaign_totals.sort_values("net_revenue", ascending=False).iloc[0]
+        return (
+            "message",
+            f"{row['campaign_name']} has the highest attributed net revenue at "
+            f"£{row['net_revenue']:,.2f}.",
+            None,
+        )
+
+    if "best roas" in normalised or "highest roas" in normalised:
+        row = campaign_totals.sort_values("roas", ascending=False).iloc[0]
+        return (
+            "message",
+            f"{row['campaign_name']} has the highest ROAS at {row['roas']:.2f}x.",
+            None,
+        )
+
+    return (
+        "unsupported",
+        "This public dashboard answers the verified questions and common questions "
+        "about spend, revenue, ROAS, alerts, and budget projections. Broader "
+        "questions are available through the local Wren setup documented in the repository.",
+        None,
+    )
+
 
 st.title("Marketing Spend Control Tower")
 st.caption(
@@ -381,6 +502,82 @@ with pacing_chart:
         pacing_figure.add_vline(x=1.0, line_dash="dash", line_color="#bdbdbd")
         pacing_figure.update_layout(margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(style_figure(pacing_figure), use_container_width=True)
+
+
+st.divider()
+st.subheader("Verified questions")
+st.caption(
+    "These questions use the same governed marts as the dashboard. "
+    "Answers respect the current reporting, channel, and campaign filters."
+)
+
+verified_columns = st.columns(3)
+selected_verified_question = ""
+for index, verified_question in enumerate(VERIFIED_QUESTIONS):
+    if verified_columns[index].button(
+        verified_question,
+        key=f"verified_question_{index}",
+        use_container_width=True,
+    ):
+        selected_verified_question = verified_question
+
+st.subheader("Ask the control tower in English")
+question_text = st.text_input(
+    "Business question",
+    placeholder="For example: Which campaign has the highest ROAS?",
+    label_visibility="collapsed",
+)
+ask_question = st.button("Run question", type="primary")
+active_question = selected_verified_question or (
+    question_text.strip() if ask_question else ""
+)
+
+if active_question:
+    st.markdown(f"**Question:** {active_question}")
+    answer_type, answer_text, answer_table = answer_dashboard_question(
+        active_question,
+        filtered_performance,
+        filtered_pacing,
+        filtered_alerts,
+    )
+    if answer_type == "unsupported":
+        st.info(answer_text)
+    else:
+        st.success(answer_text)
+        if answer_table is not None:
+            question_column_config = {
+                "campaign_name": "Campaign",
+                "channel": "Channel",
+                "alert_severity": "Severity",
+                "alert_reason": "Reason",
+                "month_to_date_spend": st.column_config.NumberColumn(
+                    "MTD spend", format="£%.2f"
+                ),
+                "budget_amount": st.column_config.NumberColumn(
+                    "Budget", format="£%.2f"
+                ),
+                "projected_month_end_spend": st.column_config.NumberColumn(
+                    "Projected spend", format="£%.2f"
+                ),
+                "projected_overspend": st.column_config.NumberColumn(
+                    "Projected overspend", format="£%.2f"
+                ),
+                "pacing_ratio": st.column_config.NumberColumn(
+                    "Pacing ratio", format="%.2f"
+                ),
+            }
+            st.dataframe(
+                answer_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config=question_column_config,
+            )
+
+st.caption(
+    "The public question box uses deterministic answers from the governed marts. "
+    "The local Wren setup supports broader natural-language questions."
+)
+
 
 st.subheader("Campaign detail")
 campaign_table = campaign_summary[
