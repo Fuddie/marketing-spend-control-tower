@@ -1,0 +1,135 @@
+name: campaign_daily_performance
+table_reference:
+  catalog: marketing_spend
+  schema: gold
+  table: fct_campaign_daily_performance
+columns:
+  - name: campaign_id
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Stable campaign identifier.
+  - name: campaign_name
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Business-facing campaign name.
+  - name: channel
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Advertising channel.
+  - name: objective
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Campaign objective.
+  - name: campaign_status
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Current campaign lifecycle status.
+  - name: metric_date
+    type: DATE
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Date represented by the performance row.
+  - name: spend_amount
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Advertising spend in GBP for the metric date.
+  - name: impressions
+    type: BIGINT
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Advertising impressions.
+  - name: clicks
+    type: BIGINT
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Advertising clicks.
+  - name: platform_conversions
+    type: BIGINT
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Conversions reported by the advertising platform.
+  - name: attributed_conversions
+    type: BIGINT
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Orders attributed to the campaign using governed attribution logic.
+  - name: attributed_gross_revenue
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Gross attributed order revenue in GBP before refunds.
+  - name: attributed_refund_amount
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Completed refunds allocated to attributed orders in GBP.
+  - name: attributed_net_revenue
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Gross attributed revenue less completed refunds in GBP.
+  - name: budget_amount
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Applicable monthly campaign budget in GBP.
+  - name: expected_daily_spend
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Expected spend per active campaign day.
+  - name: has_post_end_spend
+    type: BOOLEAN
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: True when spend was recorded after the campaign end date.
+  - name: currency_code
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: ISO currency code. Financial records use GBP.
+cached: false
+properties:
+  description: One row per campaign and metric date containing governed spend, delivery, attribution, refunds, revenue and budget context.
