@@ -95,6 +95,7 @@ def build_alert_message(alerts):
 
     return "\n".join(lines)
 
+
 def send_email(subject, body):
     api_key = os.environ.get("RESEND_API_KEY")
     recipient = os.environ.get("ALERT_RECIPIENT")
@@ -131,7 +132,7 @@ def main():
     parser.add_argument(
         "--send",
         action="store_true",
-        help="Send the campaign alert email through Gmail.",
+        help="Send the campaign alert email through Resend.",
     )
     args = parser.parse_args()
 

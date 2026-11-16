@@ -75,7 +75,7 @@ The pipeline follows a layered design:
 6. `dashboard/app.py` serves the control tower.
 7. Airflow orchestrates the workflow through a five-task DAG.
 
-The Bronze validation suite contains 17 checks. The dbt project completes 68 tests successfully.
+The Bronze validation suite contains 17 checks. The latest dbt build completed with 68 successful results.
 
 ## Governed marts
 
@@ -134,6 +134,24 @@ streamlit run dashboard/app.py --server.port 8501
 
 Then open `http://localhost:8501`.
 
+## Campaign alerts
+
+Preview prioritised campaign alerts without sending an email:
+
+```bash
+python alerts/send_campaign_alerts.py
+```
+
+Email delivery is optional and uses Resend. Set the required environment variables before using the `--send` flag:
+
+```bash
+export RESEND_API_KEY="your-resend-api-key"
+export ALERT_RECIPIENT="you@example.com"
+python alerts/send_campaign_alerts.py --send
+```
+
+Keep API keys in environment variables and do not commit them to Git.
+
 ## Wren semantic layer
 
 Wren exposes three governed models:
@@ -142,7 +160,7 @@ Wren exposes three governed models:
 - `campaign_daily_pacing`
 - `campaign_alerts`
 
-The semantic layer includes descriptions, data types, physical table references, and verified SQL memories.
+The semantic layer includes descriptions, data types, physical table references, and validated SQL queries.
 
 Verified questions:
 
@@ -153,6 +171,8 @@ Verified questions:
 The saved queries are stored under `wren/knowledge/sql`.
 
 ## DuckDB compatibility workflow
+
+The compatibility commands below assume WSL and a Wren virtual environment installed on Windows.
 
 Set the location of your Windows Wren virtual environment:
 
