@@ -1,0 +1,437 @@
+from pathlib import Path
+
+import duckdb
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+WAREHOUSE_PATH = PROJECT_ROOT / "warehouse" / "marketing_spend.duckdb"
+
+st.set_page_config(
+    page_title="Marketing Spend Control Tower",
+    page_icon="📊",
+    layout="wide",
+)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def run_query(sql: str) -> pd.DataFrame:
+    """Run one read-only query and close the connection immediately."""
+    with duckdb.connect(str(WAREHOUSE_PATH), read_only=True) as connection:
+        return connection.execute(sql).fetchdf()
+
+
+@st.cache_data(ttl=300, show_spinner="Loading governed marketing marts...")
+def load_dashboard_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    performance = run_query(
+        """
+        SELECT *
+        FROM gold.fct_campaign_daily_performance
+        ORDER BY metric_date, campaign_name
+        """
+    )
+
+    pacing = run_query(
+        """
+        SELECT *
+        FROM gold.mart_campaign_daily_pacing
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY campaign_id
+            ORDER BY metric_date DESC
+        ) = 1
+        ORDER BY campaign_name
+        """
+    )
+
+    alerts = run_query(
+        """
+        SELECT *
+        FROM gold.mart_campaign_alerts
+        ORDER BY alert_priority, campaign_name
+        """
+    )
+
+    return performance, pacing, alerts
+
+
+def convert_numeric_columns(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    frame = frame.copy()
+    for column in columns:
+        if column in frame.columns:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    return frame
+
+
+def format_currency(value: float) -> str:
+    return f"£{value:,.0f}"
+
+
+st.title("Marketing Spend Control Tower")
+st.caption(
+    "Campaign performance, budget pacing and prioritised alerts from governed dbt marts."
+)
+
+if not WAREHOUSE_PATH.exists():
+    st.error(
+        "The DuckDB warehouse was not found. Run the ingestion and dbt pipeline first."
+    )
+    st.stop()
+
+try:
+    performance_df, pacing_df, alerts_df = load_dashboard_data()
+except Exception as error:
+    st.error(f"Unable to load dashboard data: {error}")
+    st.stop()
+
+performance_df = convert_numeric_columns(
+    performance_df,
+    [
+        "spend_amount",
+        "impressions",
+        "clicks",
+        "platform_conversions",
+        "attributed_conversions",
+        "attributed_gross_revenue",
+        "attributed_refund_amount",
+        "attributed_net_revenue",
+        "budget_amount",
+        "expected_daily_spend",
+    ],
+)
+pacing_df = convert_numeric_columns(
+    pacing_df,
+    [
+        "spend_amount",
+        "budget_amount",
+        "expected_spend_to_date",
+        "month_to_date_spend",
+        "projected_month_end_spend",
+        "month_to_date_net_revenue",
+        "daily_roas",
+        "month_to_date_roas",
+        "pacing_ratio",
+    ],
+)
+alerts_df = convert_numeric_columns(
+    alerts_df,
+    [
+        "alert_priority",
+        "spend_amount",
+        "budget_amount",
+        "month_to_date_spend",
+        "expected_spend_to_date",
+        "projected_month_end_spend",
+        "month_to_date_net_revenue",
+        "month_to_date_roas",
+        "pacing_ratio",
+    ],
+)
+
+performance_df["metric_date"] = pd.to_datetime(performance_df["metric_date"])
+pacing_df["metric_date"] = pd.to_datetime(pacing_df["metric_date"])
+if not alerts_df.empty:
+    alerts_df["alert_date"] = pd.to_datetime(alerts_df["alert_date"])
+
+if performance_df.empty:
+    st.warning("No campaign performance data is available.")
+    st.stop()
+
+minimum_date = performance_df["metric_date"].min().date()
+maximum_date = performance_df["metric_date"].max().date()
+
+with st.sidebar:
+    st.header("Filters")
+
+    selected_dates = st.date_input(
+        "Reporting period",
+        value=(minimum_date, maximum_date),
+        min_value=minimum_date,
+        max_value=maximum_date,
+    )
+
+    available_channels = sorted(performance_df["channel"].dropna().unique().tolist())
+    selected_channels = st.multiselect(
+        "Channel",
+        options=available_channels,
+        default=available_channels,
+    )
+
+    available_campaigns = sorted(
+        performance_df.loc[
+            performance_df["channel"].isin(selected_channels), "campaign_name"
+        ]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    selected_campaigns = st.multiselect(
+        "Campaign",
+        options=available_campaigns,
+        default=available_campaigns,
+    )
+
+    if st.button("Refresh data", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+if isinstance(selected_dates, tuple) and len(selected_dates) == 2:
+    start_date, end_date = selected_dates
+else:
+    start_date = end_date = selected_dates
+
+filtered_performance = performance_df[
+    performance_df["metric_date"].dt.date.between(start_date, end_date)
+    & performance_df["channel"].isin(selected_channels)
+    & performance_df["campaign_name"].isin(selected_campaigns)
+].copy()
+
+filtered_pacing = pacing_df[
+    pacing_df["channel"].isin(selected_channels)
+    & pacing_df["campaign_name"].isin(selected_campaigns)
+].copy()
+
+if alerts_df.empty:
+    filtered_alerts = alerts_df.copy()
+else:
+    filtered_alerts = alerts_df[
+        alerts_df["channel"].isin(selected_channels)
+        & alerts_df["campaign_name"].isin(selected_campaigns)
+        & alerts_df["alert_date"].dt.date.between(start_date, end_date)
+    ].copy()
+
+if filtered_performance.empty:
+    st.warning("No records match the selected filters.")
+    st.stop()
+
+total_spend = float(filtered_performance["spend_amount"].sum())
+net_revenue = float(filtered_performance["attributed_net_revenue"].sum())
+attributed_conversions = int(
+    filtered_performance["attributed_conversions"].fillna(0).sum()
+)
+roas = net_revenue / total_spend if total_spend else 0.0
+active_alerts = len(filtered_alerts)
+
+kpi_columns = st.columns(5)
+kpi_columns[0].metric("Spend", format_currency(total_spend))
+kpi_columns[1].metric("Attributed net revenue", format_currency(net_revenue))
+kpi_columns[2].metric("ROAS", f"{roas:.2f}x")
+kpi_columns[3].metric("Attributed conversions", f"{attributed_conversions:,}")
+kpi_columns[4].metric("Active alerts", f"{active_alerts:,}")
+
+daily_summary = (
+    filtered_performance.groupby("metric_date", as_index=False)
+    .agg(
+        spend_amount=("spend_amount", "sum"),
+        expected_daily_spend=("expected_daily_spend", "sum"),
+        attributed_net_revenue=("attributed_net_revenue", "sum"),
+    )
+    .sort_values("metric_date")
+)
+
+spend_trend = daily_summary.melt(
+    id_vars="metric_date",
+    value_vars=["spend_amount", "expected_daily_spend"],
+    var_name="series",
+    value_name="amount",
+)
+spend_trend["series"] = spend_trend["series"].map(
+    {
+        "spend_amount": "Actual spend",
+        "expected_daily_spend": "Expected spend",
+    }
+)
+
+left_chart, right_chart = st.columns(2)
+
+with left_chart:
+    st.subheader("Daily spend against plan")
+    spend_figure = px.line(
+        spend_trend,
+        x="metric_date",
+        y="amount",
+        color="series",
+        markers=True,
+        labels={"metric_date": "Date", "amount": "GBP", "series": ""},
+        color_discrete_map={
+            "Actual spend": "#2f80ed",
+            "Expected spend": "#f2c94c",
+        },
+    )
+    spend_figure.update_layout(
+        legend_orientation="h",
+        legend_y=1.12,
+        margin=dict(l=10, r=10, t=30, b=10),
+    )
+    st.plotly_chart(spend_figure, use_container_width=True)
+
+with right_chart:
+    st.subheader("Daily spend and attributed revenue")
+    revenue_figure = px.bar(
+        daily_summary,
+        x="metric_date",
+        y=["spend_amount", "attributed_net_revenue"],
+        barmode="group",
+        labels={"metric_date": "Date", "value": "GBP", "variable": ""},
+        color_discrete_map={
+            "spend_amount": "#56ccf2",
+            "attributed_net_revenue": "#27ae60",
+        },
+    )
+    revenue_figure.for_each_trace(
+        lambda trace: trace.update(
+            name={
+                "spend_amount": "Spend",
+                "attributed_net_revenue": "Net revenue",
+            }.get(trace.name, trace.name)
+        )
+    )
+    revenue_figure.update_layout(
+        legend_orientation="h",
+        legend_y=1.12,
+        margin=dict(l=10, r=10, t=30, b=10),
+    )
+    st.plotly_chart(revenue_figure, use_container_width=True)
+
+campaign_summary = (
+    filtered_performance.groupby(["campaign_name", "channel"], as_index=False)
+    .agg(
+        spend=("spend_amount", "sum"),
+        net_revenue=("attributed_net_revenue", "sum"),
+        conversions=("attributed_conversions", "sum"),
+    )
+)
+campaign_summary["roas"] = (
+    campaign_summary["net_revenue"]
+    .div(campaign_summary["spend"].where(campaign_summary["spend"] != 0))
+    .fillna(0)
+)
+
+campaign_chart, pacing_chart = st.columns(2)
+
+with campaign_chart:
+    st.subheader("Campaign performance")
+    campaign_figure = px.bar(
+        campaign_summary.sort_values("net_revenue", ascending=True),
+        x="net_revenue",
+        y="campaign_name",
+        color="channel",
+        orientation="h",
+        hover_data={"spend": ":,.2f", "roas": ":.2f"},
+        labels={
+            "net_revenue": "Attributed net revenue (GBP)",
+            "campaign_name": "",
+            "channel": "Channel",
+        },
+    )
+    campaign_figure.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+    st.plotly_chart(campaign_figure, use_container_width=True)
+
+with pacing_chart:
+    st.subheader("Current budget pacing")
+    if filtered_pacing.empty:
+        st.info("No current pacing records match the filters.")
+    else:
+        pacing_figure = px.bar(
+            filtered_pacing.sort_values("pacing_ratio", ascending=True),
+            x="pacing_ratio",
+            y="campaign_name",
+            color="pacing_status",
+            orientation="h",
+            hover_data={
+                "month_to_date_spend": ":,.2f",
+                "budget_amount": ":,.2f",
+                "projected_month_end_spend": ":,.2f",
+            },
+            labels={
+                "pacing_ratio": "Pacing ratio",
+                "campaign_name": "",
+                "pacing_status": "Status",
+            },
+            color_discrete_map={
+                "overspending": "#eb5757",
+                "on_track": "#27ae60",
+                "underspending": "#f2c94c",
+            },
+        )
+        pacing_figure.add_vline(x=1.0, line_dash="dash", line_color="#bdbdbd")
+        pacing_figure.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(pacing_figure, use_container_width=True)
+
+st.subheader("Campaign detail")
+campaign_table = campaign_summary[
+    ["campaign_name", "channel", "spend", "net_revenue", "conversions", "roas"]
+].sort_values("net_revenue", ascending=False)
+st.dataframe(
+    campaign_table,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "campaign_name": "Campaign",
+        "channel": "Channel",
+        "spend": st.column_config.NumberColumn("Spend", format="£%.2f"),
+        "net_revenue": st.column_config.NumberColumn(
+            "Attributed net revenue",
+            format="£%.2f",
+        ),
+        "conversions": st.column_config.NumberColumn(
+            "Attributed conversions",
+            format="%d",
+        ),
+        "roas": st.column_config.NumberColumn("ROAS", format="%.2fx"),
+    },
+)
+
+st.subheader("Prioritised campaign alerts")
+if filtered_alerts.empty:
+    st.success("No active alerts match the selected filters.")
+else:
+    alert_columns = [
+        "alert_priority",
+        "alert_severity",
+        "campaign_name",
+        "channel",
+        "alert_reason",
+        "month_to_date_spend",
+        "budget_amount",
+        "projected_month_end_spend",
+        "month_to_date_roas",
+        "pacing_ratio",
+    ]
+    st.dataframe(
+        filtered_alerts[alert_columns],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "alert_priority": "Priority",
+            "alert_severity": "Severity",
+            "campaign_name": "Campaign",
+            "channel": "Channel",
+            "alert_reason": "Reason",
+            "month_to_date_spend": st.column_config.NumberColumn(
+                "MTD spend",
+                format="£%.2f",
+            ),
+            "budget_amount": st.column_config.NumberColumn(
+                "Budget",
+                format="£%.2f",
+            ),
+            "projected_month_end_spend": st.column_config.NumberColumn(
+                "Projected spend",
+                format="£%.2f",
+            ),
+            "month_to_date_roas": st.column_config.NumberColumn(
+                "MTD ROAS",
+                format="%.2fx",
+            ),
+            "pacing_ratio": st.column_config.NumberColumn(
+                "Pacing ratio",
+                format="%.2f",
+            ),
+        },
+    )
+
+st.caption(
+    "Source: gold dbt marts in DuckDB. Cached for five minutes and queried read-only."
+)
