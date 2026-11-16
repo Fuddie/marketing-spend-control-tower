@@ -1780,22 +1780,6 @@ def main():
         )
 
 
-        orders, order_campaign_links = generate_orders(
-        spend_records=spend_records,
-        run_date=RUN_DATE,
-    )
-
-    validate_orders(
-        orders=orders,
-        order_campaign_links=order_campaign_links,
-        campaigns=campaigns,
-        run_date=RUN_DATE,
-    )
-
-    orders_output_path = write_orders_csv(
-        orders=orders,
-        run_date=RUN_DATE,
-    )
 
     attribution_events = generate_attribution_events(
         orders=orders,

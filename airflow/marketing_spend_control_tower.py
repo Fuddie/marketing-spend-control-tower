@@ -18,6 +18,12 @@ with DAG(
     schedule=None,
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
+    max_active_runs=1,
+    default_args={
+        "retries": 1,
+        "retry_delay": pendulum.duration(minutes=1),
+        "execution_timeout": pendulum.duration(minutes=10),
+    },
     tags=["marketing", "dbt", "duckdb"],
 ) as dag:
 

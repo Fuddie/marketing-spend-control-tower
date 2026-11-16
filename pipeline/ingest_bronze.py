@@ -354,6 +354,22 @@ def main():
             "BEGIN TRANSACTION"
         )
 
+        latest_extract_date = connection.execute(
+            """
+            SELECT MAX(extract_date)
+            FROM bronze.campaigns
+            """
+        ).fetchone()[0]
+
+        if (
+            latest_extract_date is not None
+            and extract_date < latest_extract_date
+        ):
+            raise ValueError(
+                "Refusing to load an older snapshot: "
+                f"{extract_date} < {latest_extract_date}"
+            )
+
         for table_name in SOURCE_TABLES:
             source_count = upsert_source_file(
                 connection=connection,
