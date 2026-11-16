@@ -117,7 +117,7 @@ def answer_dashboard_question(
         return (
             "alerts",
             f"{len(alerts)} campaign(s) need attention under the current filters.",
-            alerts[columns].sort_values(["alert_priority", "campaign_name"]),
+            alerts.sort_values(["alert_priority", "campaign_name"])[columns],
         )
 
     asks_for_totals = (
