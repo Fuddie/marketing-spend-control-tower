@@ -123,8 +123,10 @@ The Streamlit dashboard provides:
 - current budget pacing
 - campaign-level detail
 - prioritised campaign alerts
+- three verified business questions with filter-aware answers
+- an English question box for spend, revenue, ROAS, alerts, and budget projections
 
-The dashboard queries the governed gold marts in read-only mode and caches results for five minutes.
+The dashboard queries the governed gold marts in read-only mode and caches results for five minutes. The question box uses deterministic answers from those marts. Broader natural-language questions remain available through the local Wren setup.
 
 Run it with:
 
