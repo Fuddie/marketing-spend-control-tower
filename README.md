@@ -144,7 +144,9 @@ Preview prioritised campaign alerts without sending an email:
 python alerts/send_campaign_alerts.py
 ```
 
-Email delivery is optional and uses Resend. Set the required environment variables before using the `--send` flag:
+Email delivery is optional and uses Resend. The HTML email uses a warning or critical header, severity badges, highlighted overspend figures, and a recommended-review section. A plain-text fallback is included for email clients that do not render HTML.
+
+Set the required environment variables before using the `--send` flag:
 
 ```bash
 export RESEND_API_KEY="your-resend-api-key"
