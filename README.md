@@ -75,7 +75,7 @@ The pipeline follows a layered design:
 6. `dashboard/app.py` serves the control tower.
 7. Airflow orchestrates the workflow through a five-task DAG.
 
-The Bronze validation suite contains 17 checks. The latest dbt build completed with 68 successful results.
+The Bronze validation suite contains 17 checks. The latest dbt build completed successfully with 3 table models, 8 view models, and 59 data tests, for 70 successful results.
 
 ## Governed marts
 
@@ -242,9 +242,7 @@ python pipeline/validate_bronze.py
 Build and test the dbt project:
 
 ```bash
-cd dbt
-dbt build --profiles-dir .
-cd ..
+dbt build --project-dir dbt --profiles-dir dbt
 ```
 
 Run the dashboard:
