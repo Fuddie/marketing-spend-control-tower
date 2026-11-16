@@ -5,6 +5,7 @@ __pycache__/
 data/landing/
 warehouse/*.duckdb
 warehouse/*.duckdb.wal
+dbt/.user.yml
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
