@@ -1,0 +1,135 @@
+name: campaign_daily_pacing
+table_reference:
+  catalog: marketing_spend
+  schema: gold
+  table: mart_campaign_daily_pacing
+columns:
+  - name: campaign_id
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Stable campaign identifier.
+  - name: campaign_name
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Business-facing campaign name.
+  - name: channel
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Advertising channel.
+  - name: objective
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Campaign objective.
+  - name: metric_date
+    type: DATE
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Pacing calculation date.
+  - name: spend_amount
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Campaign spend on the metric date in GBP.
+  - name: budget_amount
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Applicable monthly campaign budget in GBP.
+  - name: expected_spend_to_date
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Planned cumulative spend through the metric date.
+  - name: month_to_date_spend
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Actual cumulative campaign spend for the month.
+  - name: projected_month_end_spend
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Projected month-end spend based on observed pacing.
+  - name: month_to_date_net_revenue
+    type: DECIMAL
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Month-to-date attributed net revenue in GBP after completed refunds.
+  - name: daily_roas
+    type: DECIMAL
+    is_calculated: false
+    not_null: false
+    is_primary_key: false
+    properties:
+      description: Daily attributed net revenue divided by daily spend.
+  - name: month_to_date_roas
+    type: DECIMAL
+    is_calculated: false
+    not_null: false
+    is_primary_key: false
+    properties:
+      description: Month-to-date attributed net revenue divided by month-to-date spend.
+  - name: pacing_ratio
+    type: DECIMAL
+    is_calculated: false
+    not_null: false
+    is_primary_key: false
+    properties:
+      description: Month-to-date spend divided by expected spend to date. Values above 1 indicate overspend against plan.
+  - name: is_projected_to_exceed_budget
+    type: BOOLEAN
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: True when projected month-end spend exceeds the applicable budget.
+  - name: pacing_status
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: Governed pacing classification such as normal, warning or critical.
+  - name: has_post_end_spend
+    type: BOOLEAN
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: True when spend was recorded after the campaign end date.
+  - name: currency_code
+    type: VARCHAR
+    is_calculated: false
+    not_null: true
+    is_primary_key: false
+    properties:
+      description: ISO currency code. Financial records use GBP.
+cached: false
+properties:
+  description: One row per campaign and metric date with cumulative pacing, projected spend, net revenue, ROAS and governed budget-risk status.
