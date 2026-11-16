@@ -360,6 +360,80 @@ kpi_columns[1].metric("Attributed net revenue", format_currency(net_revenue))
 kpi_columns[2].metric("ROAS", f"{roas:.2f}x")
 kpi_columns[3].metric("Attributed conversions", f"{attributed_conversions:,}")
 kpi_columns[4].metric("Active alerts", f"{active_alerts:,}")
+st.divider()
+st.subheader("Verified questions")
+st.caption(
+    "These questions use the same governed marts as the dashboard. "
+    "Answers respect the current reporting, channel, and campaign filters."
+)
+
+verified_columns = st.columns(3)
+selected_verified_question = ""
+for index, verified_question in enumerate(VERIFIED_QUESTIONS):
+    if verified_columns[index].button(
+        verified_question,
+        key=f"verified_question_{index}",
+        use_container_width=True,
+    ):
+        selected_verified_question = verified_question
+
+st.subheader("Ask the control tower in English")
+question_text = st.text_input(
+    "Business question",
+    placeholder="For example: Which campaign has the highest ROAS?",
+    label_visibility="collapsed",
+)
+ask_question = st.button("Run question", type="primary")
+active_question = selected_verified_question or (
+    question_text.strip() if ask_question else ""
+)
+
+if active_question:
+    st.markdown(f"**Question:** {active_question}")
+    answer_type, answer_text, answer_table = answer_dashboard_question(
+        active_question,
+        filtered_performance,
+        filtered_pacing,
+        filtered_alerts,
+    )
+    if answer_type == "unsupported":
+        st.info(answer_text)
+    else:
+        st.success(answer_text)
+        if answer_table is not None:
+            question_column_config = {
+                "campaign_name": "Campaign",
+                "channel": "Channel",
+                "alert_severity": "Severity",
+                "alert_reason": "Reason",
+                "month_to_date_spend": st.column_config.NumberColumn(
+                    "MTD spend", format="£%.2f"
+                ),
+                "budget_amount": st.column_config.NumberColumn(
+                    "Budget", format="£%.2f"
+                ),
+                "projected_month_end_spend": st.column_config.NumberColumn(
+                    "Projected spend", format="£%.2f"
+                ),
+                "projected_overspend": st.column_config.NumberColumn(
+                    "Projected overspend", format="£%.2f"
+                ),
+                "pacing_ratio": st.column_config.NumberColumn(
+                    "Pacing ratio", format="%.2f"
+                ),
+            }
+            st.dataframe(
+                answer_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config=question_column_config,
+            )
+
+st.caption(
+    "The public question box uses deterministic answers from the governed marts. "
+    "The local Wren setup supports broader natural-language questions."
+)
+
 
 daily_summary = (
     filtered_performance.groupby("metric_date", as_index=False)
@@ -503,80 +577,6 @@ with pacing_chart:
         pacing_figure.update_layout(margin=dict(l=10, r=10, t=30, b=10))
         st.plotly_chart(style_figure(pacing_figure), use_container_width=True)
 
-
-st.divider()
-st.subheader("Verified questions")
-st.caption(
-    "These questions use the same governed marts as the dashboard. "
-    "Answers respect the current reporting, channel, and campaign filters."
-)
-
-verified_columns = st.columns(3)
-selected_verified_question = ""
-for index, verified_question in enumerate(VERIFIED_QUESTIONS):
-    if verified_columns[index].button(
-        verified_question,
-        key=f"verified_question_{index}",
-        use_container_width=True,
-    ):
-        selected_verified_question = verified_question
-
-st.subheader("Ask the control tower in English")
-question_text = st.text_input(
-    "Business question",
-    placeholder="For example: Which campaign has the highest ROAS?",
-    label_visibility="collapsed",
-)
-ask_question = st.button("Run question", type="primary")
-active_question = selected_verified_question or (
-    question_text.strip() if ask_question else ""
-)
-
-if active_question:
-    st.markdown(f"**Question:** {active_question}")
-    answer_type, answer_text, answer_table = answer_dashboard_question(
-        active_question,
-        filtered_performance,
-        filtered_pacing,
-        filtered_alerts,
-    )
-    if answer_type == "unsupported":
-        st.info(answer_text)
-    else:
-        st.success(answer_text)
-        if answer_table is not None:
-            question_column_config = {
-                "campaign_name": "Campaign",
-                "channel": "Channel",
-                "alert_severity": "Severity",
-                "alert_reason": "Reason",
-                "month_to_date_spend": st.column_config.NumberColumn(
-                    "MTD spend", format="£%.2f"
-                ),
-                "budget_amount": st.column_config.NumberColumn(
-                    "Budget", format="£%.2f"
-                ),
-                "projected_month_end_spend": st.column_config.NumberColumn(
-                    "Projected spend", format="£%.2f"
-                ),
-                "projected_overspend": st.column_config.NumberColumn(
-                    "Projected overspend", format="£%.2f"
-                ),
-                "pacing_ratio": st.column_config.NumberColumn(
-                    "Pacing ratio", format="%.2f"
-                ),
-            }
-            st.dataframe(
-                answer_table,
-                use_container_width=True,
-                hide_index=True,
-                column_config=question_column_config,
-            )
-
-st.caption(
-    "The public question box uses deterministic answers from the governed marts. "
-    "The local Wren setup supports broader natural-language questions."
-)
 
 
 st.subheader("Campaign detail")
