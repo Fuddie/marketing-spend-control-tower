@@ -41,6 +41,26 @@ def load_alerts():
         connection.close()
 
 
+def build_critical_test_alert():
+    """Return one fictional critical alert without reading or changing project data."""
+    return [
+        (
+            "TEST-001",
+            "Sample Budget Test Campaign",
+            "Test Channel",
+            "2026-11-17",
+            "critical",
+            "TEST ONLY: Month-to-date spend has exceeded the monthly budget",
+            "GBP",
+            4000.00,
+            4650.00,
+            2266.67,
+            6975.00,
+            1.1625,
+        )
+    ]
+
+
 def format_currency(amount, currency_code):
     symbols = {"GBP": "£"}
     symbol = symbols.get(currency_code, f"{currency_code} ")
@@ -296,9 +316,14 @@ def main():
         action="store_true",
         help="Send the campaign alert email through Resend.",
     )
+    parser.add_argument(
+        "--test-critical",
+        action="store_true",
+        help="Use fictional data to preview or send a red critical test email.",
+    )
     args = parser.parse_args()
 
-    alerts = load_alerts()
+    alerts = build_critical_test_alert() if args.test_critical else load_alerts()
     message = build_alert_message(alerts)
 
     print(message)
@@ -317,8 +342,10 @@ def main():
         if any(alert[4].lower() == "critical" for alert in alerts)
         else "WARNING"
     )
+    subject_prefix = "[TEST] " if args.test_critical else ""
     subject = (
-        f"{highest_severity}: {len(alerts)} campaign spend alert(s) | {alert_date}"
+        f"{subject_prefix}{highest_severity}: "
+        f"{len(alerts)} campaign spend alert(s) | {alert_date}"
     )
     html_message = build_alert_html(alerts)
 
